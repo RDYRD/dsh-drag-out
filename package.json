@@ -1,7 +1,7 @@
 {
   "name": "dsh-drag-out",
   "version": "0.1.0",
-  "description": "Drag a Presented deliverable card straight into another desktop app — the real file, through the desktop shell's native drag channel.",
+  "description": "Drag a delivered file straight out of the chat into another app — the real file, via native desktop drag.",
   "type": "module",
   "main": "lib/index.js",
   "icon": "assets/icon.png",
