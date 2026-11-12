@@ -1,0 +1,5 @@
+# dsh-drag-out bundle patch: mount the host row that resolves a Presented
+# deliverable into a desktop-draggable resource address.
+- insert:
+    - id: drag-out
+      name: dsh-drag-out

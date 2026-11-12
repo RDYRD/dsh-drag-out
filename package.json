@@ -1,0 +1,55 @@
+{
+  "name": "dsh-drag-out",
+  "version": "0.1.0",
+  "description": "Drag a Presented deliverable card straight into another desktop app — the real file, through the desktop shell's native drag channel.",
+  "type": "module",
+  "main": "lib/index.js",
+  "icon": "assets/icon.png",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "assets",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RDYRD/dsh-drag-out.git"
+  },
+  "homepage": "https://github.com/RDYRD/dsh-drag-out#readme",
+  "bugs": {
+    "url": "https://github.com/RDYRD/dsh-drag-out/issues"
+  },
+  "author": "RDYRD",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    },
+    "manifestVersion": 1
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node test/probe-host.mjs && node test/probe-client.mjs",
+    "test:host": "node test/probe-host.mjs",
+    "test:client": "node test/probe-client.mjs"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "deliverables",
+    "drag-and-drop",
+    "desktop"
+  ],
+  "license": "MIT"
+}
