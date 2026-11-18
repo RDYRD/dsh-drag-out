@@ -1,6 +1,6 @@
 {
   "name": "dsh-drag-out",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Drag a delivered file from the chat straight into WeChat, Word or any app — the real file from disk, via the DSH desktop app.",
   "type": "module",
   "main": "lib/index.js",

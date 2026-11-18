@@ -4,9 +4,11 @@
  * Imports the real route module, mounts it on a fake Connection service, and
  * drives the resolve route with fake Session and workspace lookups. It proves
  * the route answers exactly the shapes the browser half parses, maps absent
- * coordinates onto 404s, and never touches the filesystem itself.
+ * coordinates onto 404s, and only ever reads the file it was pointed at.
  */
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile, rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 
 const failures = []
 const check = (name, ok, detail) => {
@@ -55,6 +57,8 @@ const sessionQuery = {
 }
 
 const statCalls = []
+const byteFile = join(tmpdir(), `dsh-drag-out-probe-${process.pid}.png`)
+await writeFile(byteFile, Buffer.from([0x89, 0x50, 0x4e, 0x47]))
 const workspaceFiles = {
   stat: async (scope, filePath) => {
     statCalls.push({ scope, filePath })
@@ -63,6 +67,7 @@ const workspaceFiles = {
       error.code = 'workspace-file/not-found'
       throw error
     }
+    if (filePath === 'raw.png') return { absolutePath: byteFile, version: 'v1' }
     return { absolutePath: `C:\\work\\${String(filePath).replaceAll('/', '\\')}`, version: 'v1' }
   },
 }
@@ -84,10 +89,13 @@ const ctx = {
 
 module.apply(ctx)
 
-check('registers exactly one route', routes.length === 1, String(routes.length))
-const route = routes[0]
+check('registers two routes', routes.length === 2, String(routes.length))
+const route = routes.find((entry) => entry.path === '/api/drag-out.resolve')
+const bytesRoute = routes.find((entry) => entry.path === '/api/drag-out.bytes')
 check('route path', route?.path === '/api/drag-out.resolve', route?.path)
+check('byte route path', bytesRoute?.path === '/api/drag-out.bytes', bytesRoute?.path)
 check('route is GET only', Array.isArray(route?.methods) && route.methods.length === 1 && route.methods[0] === 'GET', JSON.stringify(route?.methods))
+check('byte route is GET only', Array.isArray(bytesRoute?.methods) && bytesRoute.methods.length === 1 && bytesRoute.methods[0] === 'GET', JSON.stringify(bytesRoute?.methods))
 check('route buffers the body', route?.requestBody === 'buffered', route?.requestBody)
 
 const origin = 'http://127.0.0.1:55062'
@@ -154,11 +162,34 @@ const outOfRange = await call('?sessionId=session-1&seq=10&index=4')
 check('out-of-range index is 404', outOfRange.status === 404, String(outOfRange.status))
 
 // ---------------------------------------------------------------------------
-// 5. The module never imports workspace/fs hooks of its own.
+// 5. The byte route serves the same file for a pathless fallback drag.
+// ---------------------------------------------------------------------------
+events.set('11', { type: 'deliverables/presented', seq: 11, time: 0, data: { files: [{ path: 'raw.png' }] } })
+const byteCall = (query) =>
+  bytesRoute.fetch(new Request(origin + '/api/drag-out.bytes' + query, { method: 'GET' }))
+const streamed = await byteCall('?sessionId=session-1&seq=11&index=0')
+check('byte route serves 200', streamed.status === 200, String(streamed.status))
+check('byte route media type', streamed.headers.get('content-type') === 'image/png', streamed.headers.get('content-type'))
+check('byte route declares its length', streamed.headers.get('content-length') === '4', streamed.headers.get('content-length'))
+const body = new Uint8Array(await streamed.arrayBuffer())
+check('byte route returns the file bytes', body.length === 4 && body[0] === 0x89, String(body.length))
+const byteBad = await byteCall('?seq=11&index=0')
+check('byte route refuses bad coordinates with 400', byteBad.status === 400, String(byteBad.status))
+const byteMissing = await byteCall('?sessionId=session-1&seq=8&index=0')
+check('byte route maps a missing file to 404', byteMissing.status === 404, String(byteMissing.status))
+await rm(byteFile, { force: true })
+
+// ---------------------------------------------------------------------------
+// 6. The module reads the file it was pointed at and never writes anything.
 // ---------------------------------------------------------------------------
 const source = await readFile(new URL('../lib/index.js', import.meta.url), 'utf8')
-check('host half declares no filesystem imports', !/^\s*import\s/mu.test(source))
-check('host half never writes', !/writeFile|cpSync|renameSync|unlink/u.test(source))
+const imports = source.match(/^\s*import\s.+$/gmu) ?? []
+check(
+  'host half imports the read helper only',
+  imports.length === 1 && imports[0].includes('readFile') && imports[0].includes('node:fs/promises'),
+  JSON.stringify(imports),
+)
+check('host half never writes', !/writeFile|cpSync|renameSync|unlink|appendFile|mkdir|rm\(/u.test(source))
 
 console.log('')
 if (failures.length > 0) {

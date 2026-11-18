@@ -65,6 +65,7 @@ const document = {
 // Fake desktop shell: records prepare/start/release/cancel in call order.
 // ---------------------------------------------------------------------------
 const calls = []
+let refuseResource = false
 const resolvePayload = {
   address: 'dsh-resource://file/session/session-1/C%3A/probe/shot.png',
   name: 'shot.png',
@@ -73,8 +74,13 @@ const resolvePayload = {
 const fileDrag = {
   prepare: (sourceFly, requestId) => {
     calls.push(['prepare', sourceFly, requestId])
-    const tail = decodeURIComponent(sourceFly.address.split('/').slice(-1)[0])
-    if (tail !== sourceFly.name) throw new Error('name must equal the file name: ' + tail + ' vs ' + sourceFly.name)
+    if (sourceFly.kind === 'resource') {
+      // Mirrors the shell's silent refusal when its rebuilt name no longer
+      // equals the file on disk.
+      if (refuseResource) return undefined
+      const tail = decodeURIComponent(sourceFly.address.split('/').slice(-1)[0])
+      if (tail !== sourceFly.name) throw new Error('name must equal the file name: ' + tail + ' vs ' + sourceFly.name)
+    }
     return 'handle-1'
   },
   start: (handle) => {
@@ -92,6 +98,14 @@ const fileDrag = {
 const fetchCalls = []
 const fetchImpl = async (url) => {
   fetchCalls.push(url)
+  if (String(url).startsWith('/api/drag-out.bytes')) {
+    return {
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => new Uint8Array([0x89, 0x50]).buffer,
+      json: async () => ({}),
+    }
+  }
   return { ok: true, status: 200, json: async () => resolvePayload }
 }
 
@@ -276,6 +290,36 @@ check('un-dragged press never started a drag', !kinds.includes('start'), kinds.j
 // ---------------------------------------------------------------------------
 const unavailable = mount({ actionUrl, available: false, pending: false, t })
 check('unavailable seat renders nothing', unavailable.render() === null, String(unavailable.render()))
+
+// ---------------------------------------------------------------------------
+// 6. When the shell refuses the path-backed drag, the grip drags the bytes.
+// ---------------------------------------------------------------------------
+calls.length = 0
+fetchCalls.length = 0
+refuseResource = true
+const fallback = mount({
+  actionUrl: 'present/open?sessionId=session-1&seq=12&index=0',
+  available: true,
+  pending: false,
+  t,
+})
+fallback.render().props.onPointerDown({
+  pointerType: 'mouse',
+  button: 0,
+  isPrimary: true,
+  clientX: 5,
+  clientY: 5,
+  preventDefault: () => {},
+  stopPropagation: () => {},
+})
+dispatch('pointermove', { clientX: 5, clientY: 45 })
+await new Promise((resolve) => setTimeout(resolve, 0))
+const prepares = calls.filter(([kind]) => kind === 'prepare')
+check('shell refusal retries with a byte drag', prepares.length === 2, JSON.stringify(prepares.map(([, s]) => s?.kind)))
+check('byte drag carries the file bytes', prepares[1]?.[1]?.kind === 'bytes' && prepares[1]?.[1]?.bytes?.byteLength === 2, String(prepares[1]?.[1]?.bytes?.byteLength))
+check('byte route was asked for the file', fetchCalls.some((url) => String(url).startsWith('/api/drag-out.bytes?sessionId=session-1&seq=12&index=0')), JSON.stringify(fetchCalls))
+check('byte drag still started', calls.some(([kind]) => kind === 'start'), JSON.stringify(calls.map(([kind]) => kind)))
+refuseResource = false
 
 console.log('')
 if (failures.length > 0) {
